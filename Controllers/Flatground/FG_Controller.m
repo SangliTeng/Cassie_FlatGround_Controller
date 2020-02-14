@@ -89,15 +89,15 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
     end
     properties (Access = protected)
  
-        sagittal_offset = 0.01; %-0.01;
+        sagittal_offset = -0.01;
         lateral_offset = 0;
         turning_offset = 0;
-        stand_offset = .005;% -0.01;
+        stand_offset = -0.01;
 
         Toe_thigh_offset = 1.0996;
         safe_TorqueLimits = repmat([80;60;80;190;45],[2,1]);
         
-        standing_abduction_offset = 0.02;
+        standing_abduction_offset = 0.08;
         bezier_degree = 5;
     end
     % PRIVATE PROPERTIES ====================================================
@@ -158,7 +158,7 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
         
         
         pitch_des_fil = 0;
-        tg_velocity_x_fil = -0.5;
+        tg_velocity_x_fil = 0;
         lateral_move_fil = 0;
         
         LL_des_fil = 0.7;
@@ -205,16 +205,7 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
         rotation_move = 0;
         
         to_stand_step_count = 0;
-
-        %%% my variable
-        GRF_prev = zeros(1,2);
         
-        % desired deflection angle
-        qsL_des = 0;
-        qsR_des = 0;
-        dqsL_des = 0;
-        dqsR_des = 0;
-        %%%        
 
     end % properties
     
@@ -380,17 +371,6 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     GRF_R = [0;0];
                 end
                 GRF_v = [GRF_L(2) GRF_R(2) ];
-                
-                
-                %%% Filter
-                % temp = GRF_v;
-                GRF_v = YToolkits.first_order_filter(obj.GRF_prev,GRF_v,0.10);  
-                obj.GRF_prev = GRF_v; % temp;
-                
-                GRF_L(2) = GRF_v(1);
-                GRF_R(2) = GRF_v(2);
-                %%%
-                
                 [ s_L, s_R ] = obj.get_s_LR(GRF_v); % s is normalized between 0 and 1, 0 means the leg is in air and 1 means leg is on ground.
                 s_LR = [s_L; s_R];
 
@@ -417,8 +397,7 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                 end
                 
                 % what happens when a step end and a new step begin.
-                % obj.s_prev >=0.5
-                if (obj.s_prev >=0.95 && swing_grf >obj.stance_thre_ub) || obj.walking_ini == 0 || obj.s_unsat_prev > obj.force_step_end_s
+                if (obj.s_prev >=0.5 && swing_grf >obj.stance_thre_ub) || obj.walking_ini == 0 || obj.s_unsat_prev > obj.force_step_end_s
                     obj.stanceLeg = -obj.stanceLeg;
                     if obj.walking_ini == 0
                         obj.stanceLeg = -1; % At the beginning of a step. stanceLeg is always left leg
@@ -454,7 +433,6 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                 
                 % Get bezier coefficient for gait from Gaitlibrary
                 obj.gaitparams = ControlPolicy( obj, GaitLibrary, obj.dqx_b_fil );
-                % obj.gaitparams = ControlPolicy( obj, GaitLibrary, min(obj.dqx_b_fil,-0) );
                 
                 s_unsat = obj.s_unsat_prev + (t - obj.t_prev)*obj.gaitparams.ct;
                 s = min(s_unsat,1.05); % here s indicates the phase, 0 is the beginning of a step and 1 is the end of a step.
@@ -578,13 +556,9 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     % modified later
                     obj.hd = YToolkits.bezier(obj.gaitparams.HAlpha,s);
                     obj.dhd = YToolkits.dbezier(obj.gaitparams.HAlpha,s)*obj.gaitparams.ct;
-                    
-                    [obj.hd, obj.dhd] = get_FK(obj, obj.hd, obj.dhd);
-                    
                     % swing leg foot placement
                     if obj.foot_placement ==1
                         % foot placement in saggital plane + add pitch angle in outputs 
-                        % control the swing thigh joint leg
                         obj.hd(sw_LA) = obj.hd(sw_LA)   + (obj.Kfs_p*(obj.dqx_b_fil-obj.tg_velocity_x_fil) + obj.sagittal_offset + obj.Kfs_d*(obj.dqx_b_fil - obj.v_final(1)))*s_slow  + qpitch*s_slow;
                         obj.dhd(sw_LA) = obj.dhd(sw_LA) + (obj.Kfs_p*(obj.dqx_b_fil-obj.tg_velocity_x_fil) + obj.sagittal_offset + obj.Kfs_d*(obj.dqx_b_fil - obj.v_final(1)))*ds_slow + qpitch*ds_slow + dqpitch*s_slow;
                         
@@ -596,17 +570,14 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                         else
                             p = obj.abduction_inward_gain;
                         end              
-                        obj.hd(sw_abduction) = obj.hd(sw_abduction) + (p * lateral_ftpl * s_slow  + (obj.lateral_offset + obj.lateral_move)*s_slow  - qroll*s_slow );
-                        obj.dhd(sw_abduction) = obj.dhd(sw_abduction) + (p * lateral_ftpl * ds_slow + (obj.lateral_offset + obj.lateral_move)*ds_slow - qroll*ds_slow - dqroll*s_slow);
+                        obj.hd(sw_abduction) = obj.hd(sw_abduction) +   p * lateral_ftpl * s_slow  + (obj.lateral_offset + obj.lateral_move)*s_slow  - qroll*s_slow ;
+                        obj.dhd(sw_abduction) = obj.dhd(sw_abduction) + p * lateral_ftpl * ds_slow + (obj.lateral_offset + obj.lateral_move)*ds_slow - qroll*ds_slow - dqroll*s_slow;
                         
                         % use hip yaw motor on swing leg to maintain the direction ( or not). 
                         if obj.to_turn ~=1 && obj.keep_direction
                             direction_keep_term = median([-0.2,0.2,YToolkits.wrap2Pi(obj.tg_yaw - qyaw)]);
                             obj.hd(sw_rotation) = obj.hd(sw_rotation) + (direction_keep_term+ obj.turning_offset)*s_slow;
-                            obj.dhd(sw_rotation) = obj.dhd(sw_rotation) + (direction_keep_term + obj.turning_offset)*ds_slow;
-                            
-                            obj.hd(st_rotation) = obj.hd(st_rotation) + (direction_keep_term+ obj.turning_offset)*s_slow;
-                            obj.dhd(st_rotation) = obj.dhd(st_rotation) + (direction_keep_term + obj.turning_offset)*ds_slow;
+                            obj.dhd(sw_rotation) = obj.dhd(sw_rotation) + (direction_keep_term + obj.turning_offset)*ds_slow;                            
                         else
                             obj.hd(sw_rotation) = obj.hd(sw_rotation) + (obj.rotation_move + obj.turning_offset)*s_slow;
                             obj.dhd(sw_rotation) = obj.dhd(sw_rotation) + (obj.rotation_move + obj.turning_offset)*ds_slow;
@@ -637,27 +608,6 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     end
                     
                     % compute torque 
-                    % here we add lateral shift for contact                   
-                    if obj.stanceLeg == 1 % right stance leg
-                        off_ground = 1 - s_L; % contact = 1: no con
-                        lateral_shift = - off_ground/3.14;
-                    else
-                        off_ground = 1 - s_R;
-                        lateral_shift = off_ground/3.14;
-                    end
-       
-                    % left_tune = - 1 * off_ground * (obj.Kp_lateral_stand*(qroll - obj.roll_des_fil - (-lateral_shift)) + .25 * dqroll  );
-                    % right_tune =  1 * off_ground * (obj.Kp_lateral_stand*(qroll - obj.roll_des_fil - (-lateral_shift)) + .25 * dqroll  );
-
-                    Gain = -0.15;
-                    left_tune = - Gain * off_ground * ( .2*(qroll - (-lateral_shift)) + .25 * dqroll  );
-                    right_tune = Gain * off_ground * ( .2*(qroll - (-lateral_shift)) + .25 * dqroll  );
-%}                    
-                    % here we use spring to detect the contact and
-                                        
-                    obj.hd(4) = min(obj.hd(4) + left_tune, 0.9);
-                    obj.hd(9) = min(obj.hd(9) + right_tune, 0.9);
-                    
                     obj.y = obj.h0 - obj.hd;
                     obj.dy = obj.dh0 -obj.dhd;
                     
@@ -666,7 +616,7 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     
                     % make the stance leg passive
                     if obj.stance_passive == 1
-                        obj.hd_joint(st_LA) = obj.h0_joint(st_LA);% this block means there is no control on the satance leg thigh
+                        obj.hd_joint(st_LA) = obj.h0_joint(st_LA);
                         obj.dhd_joint(st_LA) = 0;
                     end
                     % Save it for resetting bezier ( for the passive stance Leg)
@@ -676,10 +626,9 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     obj.dy_joint = obj.dh0_joint - obj.dhd_joint;
                     u = - obj.Kp.*obj.y_joint - obj.Kd.*obj.dy_joint; %not final torque, some compensation for gravity will be added, the torque on stance hip roll and stance hip pitch will be replaced.
                     
-                    % Torso Control Directly use the motor to contol
+                    % Torso Control
                     u_torso_pitch = - obj.Kp_pitch * qpitch - obj.Kd_pitch * dqpitch;
                     u_torso_roll = obj.Kp_roll * qroll + obj.Kd_roll * dqroll;
-                    
                     if obj.pitch_torso_control == 1
                         u(3) = (1 - s_L)*u(3) + s_L*u_torso_pitch;
                         u(8) = (1 - s_R)*u(8) + s_R*u_torso_pitch;
@@ -705,54 +654,11 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                         u(sw_knee) = u(sw_knee) + (obj.u_knee_cp)*(1-s_fast);
                     end
                     % thigh_compensation
-                    
-                    % calculate the toe torque compensation for COM
-                    % seems higher gain can bring make more stable
-                    P_feedback_toe = ( com_pos(1) - obj.stand_offset- (r_foot_p(1)+l_foot_p(1))/2);
-                    obj.P_feedback_toe_fil = YToolkits.first_order_filter(obj.P_feedback_toe_fil,P_feedback_toe,obj.fil_para_3);
-                    u_toe = - (obj.Kp_toe_stand*obj.P_feedback_toe_fil + obj.Kd_toe_stand*( obj.com_vel_x_fil - 0));
-                    u([5,10]) = u_toe;% min(s_L,s_R)*u_toe
-                    u([5,10]) = YToolkits.clamp(u([5,10]),-15,15);
-                    % u(sw_toe) = 0;
                     if obj.thigh_compensation == 1
                         u(st_thigh) = u(st_thigh) + obj.u_thigh_cp*s_fast;
                         u(sw_thigh) = u(sw_thigh) + obj.u_thigh_cp*(1-s_fast);
                     end
                     
-                    %{
-                    %%%%%%%%%%%%%%%%%%%%%%%
-                    left_tune = - obj.s2*max([s_L; s_R]) * (obj.Kp_lateral_stand*(qroll - obj.roll_des_fil - (-lateral_shift))  + obj.Kd_lateral_stand*dqroll);
-                    right_tune = obj.s2*max([s_L; s_R]) * (obj.Kp_lateral_stand*(qroll - obj.roll_des_fil - (-lateral_shift)) + obj.Kd_lateral_stand*dqroll);
-                    % Inverse kinematics
-                    min_leg_length = 0.9; % default: 0.9
-                    [qthigh_d_L, qknee_d_L ] = Inverse_Kinematics_p(obj.pitch_des_fil, min(obj.LL_des_fil + left_tune, min_leg_length));
-                    [qthigh_d_R, qknee_d_R ] = Inverse_Kinematics_p(obj.pitch_des_fil, min(obj.LL_des_fil + right_tune, min_leg_length));
-                    [dqthigh_d_L, dqknee_d_L] = Inverse_Kinematics_v(obj.pitch_des_fil, min(obj.LL_des_fil + left_tune, min_leg_length), 0, 0);
-                    [dqthigh_d_R, dqknee_d_R] = Inverse_Kinematics_v(obj.pitch_des_fil, min(obj.LL_des_fil + right_tune, min_leg_length), 0, 0);
-                    y_thigh = [obj.h0_joint(3)-qthigh_d_L; obj.h0_joint(8)-qthigh_d_R];
-                    dy_thigh = [obj.dh0_joint(3)-dqthigh_d_L; obj.dh0_joint(8)-dqthigh_d_R];
-                    y_knee = [obj.h0_joint(4)-qknee_d_L; obj.h0_joint(9)-qknee_d_R];
-                    dy_knee = [obj.dh0_joint(4)-dqknee_d_L; obj.dh0_joint(9)-dqknee_d_R];
-                    
-                    more = 3;
-                    less = 1;
-                    total = more + less;
-                    if obj.stanceLeg == 1 % right stance leg
-                        
-                        u(3) = (- more*(obj.Kp_thigh_stand.*y_thigh(1) + obj.Kd_thigh_stand.*dy_thigh(1)) +  less*u(3))/total;
-                        u(4) = (- more*(obj.Kp_knee_stand*y_knee(1) + obj.Kd_knee_stand*dy_knee(1)) + less*u(4))/total;
-                        
-                        u(8) = (- less*(obj.Kp_thigh_stand.*y_thigh(2) + obj.Kd_thigh_stand.*dy_thigh(2)) +  more*u(8))/total;
-                        u(9) = (- less*(obj.Kp_knee_stand*y_knee(2) + obj.Kd_knee_stand*dy_knee(2)) + more*u(9))/total;
-                    else
-                        u(3) = (- less*(obj.Kp_thigh_stand.*y_thigh(1) + obj.Kd_thigh_stand.*dy_thigh(1)) +  more*u(3))/total;
-                        u(4) = (- less*(obj.Kp_knee_stand*y_knee(1) + obj.Kd_knee_stand*dy_knee(1)) + more*u(4))/total;
-                        
-                        u(8) = (- more*(obj.Kp_thigh_stand.*y_thigh(2) + obj.Kd_thigh_stand.*dy_thigh(2)) +  less*u(8))/total;
-                        u(9) = (- more*(obj.Kp_knee_stand*y_knee(2) + obj.Kd_knee_stand*dy_knee(2)) + less*u(9))/total;
-                    end
-                    %%%%%%%%%%%%%%%%%%%%%%%
-                    %}
                     % Construct Data
                     Data.hd = obj.hd; 
                     Data.dhd = obj.dhd;
@@ -769,9 +675,7 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     if obj.task_next == 1
                         obj.t1 = (obj.t1 + (t - obj.t_prev));
                         obj.s1 = obj.t1/obj.shift_time;
-                        %%% com to the right, add - before RHS
-                        lateral_shift = 0*obj.shift_distance * obj.s1;
-                        %%%
+                        lateral_shift = obj.shift_distance * obj.s1;
                     else
                         lateral_shift = 0;
                     end
@@ -782,11 +686,10 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
                     left_tune = - obj.s2*max([s_L; s_R]) * (obj.Kp_lateral_stand*(qroll - obj.roll_des_fil - (-lateral_shift))  + obj.Kd_lateral_stand*dqroll);
                     right_tune = obj.s2*max([s_L; s_R]) * (obj.Kp_lateral_stand*(qroll - obj.roll_des_fil - (-lateral_shift)) + obj.Kd_lateral_stand*dqroll);
                     % Inverse kinematics
-                    min_leg_length = 0.9; % default: 0.9
-                    [qthigh_d_L, qknee_d_L ] = Inverse_Kinematics_p(obj.pitch_des_fil, min(obj.LL_des_fil + left_tune, min_leg_length));
-                    [qthigh_d_R, qknee_d_R ] = Inverse_Kinematics_p(obj.pitch_des_fil, min(obj.LL_des_fil + right_tune, min_leg_length));
-                    [dqthigh_d_L, dqknee_d_L] = Inverse_Kinematics_v(obj.pitch_des_fil, min(obj.LL_des_fil + left_tune, min_leg_length), 0, 0);
-                    [dqthigh_d_R, dqknee_d_R] = Inverse_Kinematics_v(obj.pitch_des_fil, min(obj.LL_des_fil + right_tune, min_leg_length), 0, 0);
+                    [qthigh_d_L, qknee_d_L ] = Inverse_Kinematics_p(obj.pitch_des_fil, min(obj.LL_des_fil + left_tune, 0.9));
+                    [qthigh_d_R, qknee_d_R ] = Inverse_Kinematics_p(obj.pitch_des_fil, min(obj.LL_des_fil + right_tune, 0.9));
+                    [dqthigh_d_L, dqknee_d_L] = Inverse_Kinematics_v(obj.pitch_des_fil, min(obj.LL_des_fil + left_tune, 0.9), 0, 0);
+                    [dqthigh_d_R, dqknee_d_R] = Inverse_Kinematics_v(obj.pitch_des_fil, min(obj.LL_des_fil + right_tune, 0.9), 0, 0);
                     y_thigh = [obj.h0_joint(3)-qthigh_d_L; obj.h0_joint(8)-qthigh_d_R];
                     dy_thigh = [obj.dh0_joint(3)-dqthigh_d_L; obj.dh0_joint(8)-dqthigh_d_R];
                     y_knee = [obj.h0_joint(4)-qknee_d_L; obj.h0_joint(9)-qknee_d_R];
@@ -1033,10 +936,6 @@ classdef FG_Controller <matlab.System & matlab.system.mixin.Propagates & matlab.
             dhd_joint = dhd_output;
             hd_output(4) = min(hd_output(4),1.02);
             hd_output(9) = min(hd_output(9),1.02);
-            %%%
-            % hd_output(4) = max(hd_output(4),0.7);
-            % hd_output(9) = max(hd_output(9),0.7);
-            %%%
             [hd_joint(3), hd_joint(4)] = Inverse_Kinematics_p(hd_output(3), hd_output(4));
             [hd_joint(8), hd_joint(9)] = Inverse_Kinematics_p(hd_output(8), hd_output(9));
             [dhd_joint(3), dhd_joint(4)] = Inverse_Kinematics_v(hd_output(3), hd_output(4), dhd_output(3), dhd_output(4));
