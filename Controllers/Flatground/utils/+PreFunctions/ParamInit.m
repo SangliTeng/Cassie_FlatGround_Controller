@@ -1,22 +1,24 @@
 % PD gain on Joints (walk)
-c_Kp_pitch = 100;
-c_Kd_pitch = 20;
-c_Kp_roll = 100;
-c_Kd_roll = 20;
-c_Kp_yaw = 200;
-c_Kd_yaw = 4;
+c_Kp_pitch = 100;% 100;
+c_Kd_pitch = 20;% 20;
+c_Kp_roll = 100;% 100;
+c_Kd_roll = 200;% 20;
+c_Kp_yaw = 200;% 200;
+c_Kd_yaw = 4;% 4;
 
-c_Kp_abduction = 400;
-c_Kp_rotation = 200;
-c_Kp_thigh = 500;
-c_Kp_knee = 500;
-c_Kp_toe = 10;
+% 40 200 500 5 .1 make the robot walk 2 step
+% 4 4 15 .15 .002
+c_Kp_abduction = 400.0;% 400;
+c_Kp_rotation = 20;% 200;
+c_Kp_thigh = 500;% 500;
+c_Kp_knee = 50.0;% 500;
+c_Kp_toe = 10; %10;
 
-c_Kd_abduction = 10;
-c_Kd_rotation = 4;
-c_Kd_thigh = 15;
-c_Kd_knee = 15;
-c_Kd_toe = 2;
+c_Kd_abduction = 10;% 10;
+c_Kd_rotation = .4;% 4;
+c_Kd_thigh = 15;% 15;
+c_Kd_knee = .15;% 15;
+c_Kd_toe = 2;% 2;
 
 % PD gain on Joints (stand)
 c_Kp_abduction_stand = 400;

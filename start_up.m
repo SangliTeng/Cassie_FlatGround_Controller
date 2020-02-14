@@ -3,6 +3,7 @@
 % Copyright 2017 Mikhail S. Jones
 
 % Get project root location
+setenv('MW_MINGW64_LOC','D:\mingw-w64')
 projectRoot = fileparts(mfilename('fullpath'));
 restoredefaultpath;
 % Construct paths to cache and code folders
@@ -18,4 +19,4 @@ Simulink.fileGenControl('set',...
 root_dir = pwd;
 % Add all subfolders to MATLAB path
 addpath(genpath('./'));
-
+addpath('ImLib')
